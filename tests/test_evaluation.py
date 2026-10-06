@@ -1,42 +1,16 @@
-from pathlib import Path
+"""
+Test executable evaluation and metric aggregation.
 
-from posttrain_lab.data.schema import RepairTask
-from posttrain_lab.eval.runner import evaluate_files, evaluate_task, summarize
+Topics to implement:
+- Score a correct repair as passing and an incorrect repair as failing.
+- Identify missing predictions and invalid Python before test execution.
+- Capture assertion failures, import failures, crashes, and timeouts separately.
+- Verify pass@1 and later pass@k calculations on known examples.
+- Verify report serialization is complete and deterministic.
+- Verify the evaluator enforces configured resource and isolation boundaries.
 
-ROOT = Path(__file__).parents[1]
-
-
-def test_passing_repair() -> None:
-    task = RepairTask(
-        id="increment",
-        instruction="Increment x.",
-        buggy_code="def increment(x): return x",
-        test_code=(
-            "from solution import increment\n\n"
-            "def test_increment(): assert increment(1) == 2\n"
-        ),
-        source="unit-test",
-        split="test",
-    )
-    result = evaluate_task(task, "def increment(x):\n    return x + 1\n")
-    assert result.parses
-    assert result.passed
-
-
-def test_syntax_error_is_diagnostic() -> None:
-    task = RepairTask("bad", "Fix it", "pass", "def test_x(): pass", "unit-test", "test")
-    result = evaluate_task(task, "def broken(:")
-    assert not result.parses
-    assert not result.tests_ran
-    assert summarize([result])["pass_at_1"] == 0.0
-
-
-def test_example_evaluation_end_to_end(tmp_path: Path) -> None:
-    output = tmp_path / "report.json"
-    payload = evaluate_files(
-        ROOT / "data/examples/eval.jsonl",
-        ROOT / "data/examples/predictions.jsonl",
-        output,
-    )
-    assert payload["summary"]["pass_at_1"] == 1.0
-    assert output.exists()
+Definitions:
+- Integration test: verifies that multiple components work together correctly.
+- Golden result: a small known outcome used to validate metric implementation.
+- Failure taxonomy: named categories that explain why a candidate did not pass.
+"""
