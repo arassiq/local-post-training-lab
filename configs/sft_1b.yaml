@@ -1,0 +1,33 @@
+experiment:
+  name: full-sft-adamw-1b-v0
+  seed: 17
+  output_dir: artifacts/full-sft-adamw-1b-v0
+
+model:
+  # Replace with the selected licensed 0.5B-1.5B code/instruct checkpoint.
+  name: REPLACE_ME
+  revision: main
+  trust_remote_code: false
+
+data:
+  train_path: data/examples/train.jsonl
+  validation_path: data/examples/validation.jsonl
+  max_length: 1024
+
+training:
+  learning_rate: 0.00002
+  weight_decay: 0.1
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 0.00000001
+  epochs: 1
+  max_steps: 20
+  micro_batch_size: 1
+  gradient_accumulation_steps: 8
+  max_grad_norm: 1.0
+  warmup_ratio: 0.05
+  log_every: 1
+  eval_every: 10
+  save_every: 10
+  gradient_checkpointing: true
+  precision: bf16

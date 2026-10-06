@@ -1,0 +1,1 @@
+{"id":"within-range-validation","instruction":"Return True when value is inside the inclusive interval.","buggy_code":"def within(value, low, high):\n    return low < value < high\n","test_output":"assert within(1, 1, 3)\nE assert False","target_code":"def within(value, low, high):\n    return low <= value <= high\n","source":"hand-authored-seed-validation","split":"validation"}

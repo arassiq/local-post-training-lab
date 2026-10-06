@@ -1,0 +1,1 @@
+{"task_id":"add-boundary","generated_code":"def clamp(value, low, high):\n    return max(low, min(value, high))\n"}

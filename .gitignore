@@ -1,0 +1,27 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+*.egg-info/
+
+# Local experiment artifacts
+artifacts/
+checkpoints/
+runs/
+reports/*.json
+reports/*.html
+data/processed/
+data/generated/
+
+# Large model/data files
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.arrow
