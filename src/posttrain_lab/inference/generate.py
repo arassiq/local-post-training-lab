@@ -44,6 +44,8 @@ class LocalModelRun:
         answer: str
         raw_text: str
         completed_reasoning: bool
+        prompt_tokens: int
+        generated_tokens: int
 
     
     def parse_completion(self, raw_text:str) -> tuple[str,str,bool]:
@@ -109,6 +111,8 @@ class LocalModelRun:
         model_output = self.tokenizer.batch_decode(completion_ids, skip_special_tokens=True)[0]
 
         reasoning, answer, completed_reasoning = self.parse_completion(model_output)
+        prompt_tokens = model_inputs["input_ids"].shape[-1]
+        generated_tokens = completion_ids.shape[-1]
 
 
         return self.GenerationResult(
@@ -116,14 +120,14 @@ class LocalModelRun:
             reasoning = reasoning.strip(),
             answer = answer.strip(),
             raw_text = model_output,
-            completed_reasoning = completed_reasoning
+            completed_reasoning = completed_reasoning,
+            prompt_tokens = prompt_tokens,
+            generated_tokens = generated_tokens
         )
 
-LocalModel = LocalModelRun.from_pretrained()
-input_text = "give me a 5 word haiku about panthers"
-generation_results = LocalModel.generate(input_text)
-print('reasoning: ',generation_results.reasoning)
-print('answer: ', generation_results.answer)
+    
+def main() -> None:
+    pass
 
-
-
+if __name__ == "__main__":
+    main()
