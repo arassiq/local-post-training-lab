@@ -1,62 +1,133 @@
-from __future__ import annotations
+"""
+Load a local model and generate code-repair predictions for evaluation tasks.
 
-import json
-from pathlib import Path
-from typing import Any
+Topics to implement:
+- Load a tokenizer and either a base model or fine-tuned checkpoint.
+- Resolve CPU, MPS, and future CUDA devices explicitly.
+- Apply the same prompt template used to construct training data.
+- Implement deterministic greedy decoding as the initial evaluation policy.
+- Add configurable sampling, temperature, top-p, and multiple candidates later.
+- Decode only newly generated tokens rather than repeating the prompt.
+- Extract Python from the model response without silently rewriting its behavior.
+- Write task identifiers, generated code, model revision, and decoding settings to JSONL.
+- Batch compatible requests and measure latency, throughput, and peak memory.
 
-from posttrain_lab.data.schema import RepairTask, load_jsonl
-
-
-def generate_predictions(
-    model_name: str,
-    task_path: Path,
-    output_path: Path,
-    *,
-    revision: str = "main",
-    max_new_tokens: int = 256,
-    temperature: float = 0.0,
-    seed: int = 17,
-) -> None:
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-
-    torch.manual_seed(seed)
-    tasks = load_jsonl(task_path, RepairTask)
-    tokenizer = AutoTokenizer.from_pretrained(model_name, revision=revision)
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    dtype = torch.bfloat16 if device.type == "mps" else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, revision=revision, torch_dtype=dtype
-    ).to(device)
-    model.eval()
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as handle:
-        for task in tasks:
-            inputs = tokenizer(task.prompt(), return_tensors="pt").to(device)
-            input_length = inputs["input_ids"].shape[1]
-            generation_options: dict[str, Any] = {
-                "max_new_tokens": max_new_tokens,
-                "pad_token_id": tokenizer.eos_token_id,
-            }
-            if temperature > 0:
-                generation_options.update(do_sample=True, temperature=temperature)
-            else:
-                generation_options["do_sample"] = False
-            with torch.no_grad():
-                output = model.generate(**inputs, **generation_options)
-            completion = tokenizer.decode(output[0, input_length:], skip_special_tokens=True)
-            record = {"task_id": task.id, "generated_code": extract_python(completion)}
-            handle.write(json.dumps(record) + "\n")
+Definitions:
+- Inference: using trained model parameters to produce predictions.
+- Checkpoint: a saved set of model parameters and related metadata.
+- Greedy decoding: selecting the highest-probability token at every generation step.
+- Sampling: drawing tokens from the predicted probability distribution.
+- Temperature: rescales token probabilities to control randomness.
+- Top-p sampling: samples from the smallest token set reaching a probability threshold.
+- Generation seed: initializes randomness so a sampling run can be reproduced.
+- Throughput: amount of generated work, commonly tokens per second.
+"""
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+from dataclasses import dataclass
 
 
-def extract_python(completion: str) -> str:
-    """Remove the markdown fence used by the training format without rewriting code."""
-    value = completion.strip()
-    if value.startswith("```python"):
-        value = value[len("```python") :].lstrip("\n")
-    elif value.startswith("```"):
-        value = value[3:].lstrip("\n")
-    if "```" in value:
-        value = value.split("```", maxsplit=1)[0]
-    return value.rstrip() + "\n"
+
+class LocalModelRun:
+    def __init__(self, model:AutoModelForCausalLM, tokenizer:AutoTokenizer, device:str):
+        '''
+        TODO: Potential breakpoint if we are fine tuning and model or tokenizer is not AutoModelForCausalLm or AutoTokenizer object respectively     
+        '''
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = device
+
+    @dataclass
+    class GenerationResult:
+        question: str
+        reasoning: str
+        answer: str
+        raw_text: str
+        completed_reasoning: bool
+        prompt_tokens: int
+        generated_tokens: int
+
+    
+    def parse_completion(self, raw_text:str) -> tuple[str,str,bool]:
+        reasoning, separator, answer = raw_text.partition("</think>")
+        
+
+        if not separator:
+            return reasoning.strip(), "", False 
+
+        return reasoning.strip(), answer.strip(), True
+    
+    @classmethod
+    def from_pretrained(cls, model_name:str = 'deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B'):
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name, 
+            padding_side="left") #adds left padding as LLM not trained to continue generation from padding tokens
+
+        device = torch.device(
+            'mps' if torch.mps.is_available() else 'cpu'
+        )
+        dtype = (
+            torch.bfloat16 
+        )
+
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            dtype=dtype,
+            low_cpu_mem_usage=True
+            )
+        model.to(device)
+        model.eval()
+
+        return cls(model, tokenizer, device)
+
+
+    def generate(self,input_text:str) -> str:
+        
+        messages = [{
+            "role": "user",
+            "content": input_text,
+            }]
+
+        model_inputs = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors='pt',
+            enable_thinking=True
+        ).to(self.device)
+
+        #model_inputs = self.tokenizer(messages, return_tensors="pt").to(self.model.device)
+        
+        with torch.inference_mode():
+            generated_ids = self.model.generate(
+                **model_inputs,
+                max_new_tokens = 2048,
+                do_sample=False)
+        
+        prompt_length = model_inputs['input_ids'].shape[-1]
+        completion_ids = generated_ids[:, prompt_length:]
+        
+        model_output = self.tokenizer.batch_decode(completion_ids, skip_special_tokens=True)[0]
+
+        reasoning, answer, completed_reasoning = self.parse_completion(model_output)
+        prompt_tokens = model_inputs["input_ids"].shape[-1]
+        generated_tokens = completion_ids.shape[-1]
+
+
+        return self.GenerationResult(
+            question = input_text,
+            reasoning = reasoning.strip(),
+            answer = answer.strip(),
+            raw_text = model_output,
+            completed_reasoning = completed_reasoning,
+            prompt_tokens = prompt_tokens,
+            generated_tokens = generated_tokens
+        )
+
+    
+def main() -> None:
+    pass
+
+if __name__ == "__main__":
+    main()

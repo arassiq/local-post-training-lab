@@ -1,10 +1,16 @@
-from posttrain_lab.inference.generate import extract_python
+"""
+Test response parsing and deterministic model-generation behavior.
 
+Topics to implement:
+- Extract fenced and unfenced Python without changing valid code.
+- Handle empty, truncated, malformed, and explanatory model responses.
+- Confirm prompt tokens are excluded from the saved completion.
+- Confirm greedy decoding is reproducible.
+- Confirm model and decoding metadata are stored with every prediction.
+- Use a tiny test double or small fixture model instead of downloading a large checkpoint.
 
-def test_extracts_fenced_python() -> None:
-    completion = "```python\ndef add(a, b):\n    return a + b\n```\nExplanation"
-    assert extract_python(completion) == "def add(a, b):\n    return a + b\n"
-
-
-def test_preserves_unfenced_code() -> None:
-    assert extract_python("def identity(x):\n    return x") == "def identity(x):\n    return x\n"
+Definitions:
+- Test double: a lightweight replacement for a slow or external dependency.
+- Regression test: preserves behavior that previously failed or was fixed.
+- Deterministic decoding: generation that returns the same output for the same inputs.
+"""
